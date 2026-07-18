@@ -4,6 +4,9 @@ import logger from "../utils/logger.js";
 
 const KAFKA_BROKER = process.env.KAFKA_BROKER || "localhost:9092";
 const USE_REAL_KAFKA = process.env.USE_REAL_KAFKA === "true";
+const KAFKA_SASL_USERNAME = process.env.KAFKA_SASL_USERNAME;
+const KAFKA_SASL_PASSWORD = process.env.KAFKA_SASL_PASSWORD;
+const KAFKA_SASL_MECHANISM = process.env.KAFKA_SASL_MECHANISM || "scram-sha-256";
 
 class MockKafka {
   constructor() {
@@ -57,10 +60,22 @@ let isMock = true;
 
 if (USE_REAL_KAFKA) {
   try {
-    const kafka = new Kafka({
+    const kafkaConfig = {
       clientId: "enclave-portal",
       brokers: [KAFKA_BROKER],
-    });
+    };
+
+    // Configure SASL if credentials are provided (e.g., for Cloud Kafka like Upstash)
+    if (KAFKA_SASL_USERNAME && KAFKA_SASL_PASSWORD) {
+      kafkaConfig.ssl = true;
+      kafkaConfig.sasl = {
+        mechanism: KAFKA_SASL_MECHANISM,
+        username: KAFKA_SASL_USERNAME,
+        password: KAFKA_SASL_PASSWORD,
+      };
+    }
+
+    const kafka = new Kafka(kafkaConfig);
     activeProducer = kafka.producer();
     activeConsumer = kafka.consumer({ groupId: "enclave-portal-group" });
     isMock = false;
