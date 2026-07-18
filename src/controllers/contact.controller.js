@@ -1,5 +1,10 @@
+import mongoose from "mongoose";
 import Contact from "../models/Contact.js";
 import logger from "../utils/logger.js";
+import { publishContactEvent } from "../config/kafka.js";
+
+// In-Memory Database Fallback for Offline Mode
+const mockDb = [];
 
 /**
  * @desc    Create Contact Message
@@ -7,13 +12,31 @@ import logger from "../utils/logger.js";
  */
 export const createContact = async (req, res, next) => {
   try {
-    const contact = await Contact.create(req.body);
+    let contact;
+    const isConnected = mongoose.connection.readyState === 1;
+
+    if (isConnected) {
+      contact = await Contact.create(req.body);
+    } else {
+      contact = {
+        _id: new mongoose.Types.ObjectId().toString(),
+        ...req.body,
+        createdAt: new Date(),
+      };
+      mockDb.push(contact);
+      logger.info(`[Offline DB] Contact saved to in-memory store: ${contact.email}`);
+    }
 
     logger.info(`New contact submitted by ${contact.email}`);
 
+    // Publish event asynchronously to Kafka
+    publishContactEvent(contact);
+
     res.status(201).json({
       success: true,
-      message: "Contact message submitted successfully.",
+      message: isConnected 
+        ? "Contact message submitted successfully."
+        : "Contact message submitted successfully (In-Memory Fallback).",
       data: contact,
     });
   } catch (error) {
@@ -27,9 +50,17 @@ export const createContact = async (req, res, next) => {
  */
 export const getAllContacts = async (req, res, next) => {
   try {
-    const contacts = await Contact.find().sort({
-      createdAt: -1,
-    });
+    let contacts;
+    const isConnected = mongoose.connection.readyState === 1;
+
+    if (isConnected) {
+      contacts = await Contact.find().sort({
+        createdAt: -1,
+      });
+    } else {
+      contacts = [...mockDb].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+      logger.info(`[Offline DB] Retrieved ${contacts.length} contacts from in-memory store`);
+    }
 
     res.status(200).json({
       success: true,
@@ -47,16 +78,30 @@ export const getAllContacts = async (req, res, next) => {
  */
 export const deleteContact = async (req, res, next) => {
   try {
-    const contact = await Contact.findByIdAndDelete(req.params.id);
+    const isConnected = mongoose.connection.readyState === 1;
 
-    if (!contact) {
-      return res.status(404).json({
-        success: false,
-        message: "Contact not found.",
-      });
+    if (isConnected) {
+      const contact = await Contact.findByIdAndDelete(req.params.id);
+
+      if (!contact) {
+        return res.status(404).json({
+          success: false,
+          message: "Contact not found.",
+        });
+      }
+
+      logger.info(`Contact deleted : ${req.params.id}`);
+    } else {
+      const index = mockDb.findIndex((c) => c._id.toString() === req.params.id);
+      if (index === -1) {
+        return res.status(404).json({
+          success: false,
+          message: "Contact not found.",
+        });
+      }
+      mockDb.splice(index, 1);
+      logger.info(`[Offline DB] Deleted contact : ${req.params.id}`);
     }
-
-    logger.info(`Contact deleted : ${req.params.id}`);
 
     res.status(200).json({
       success: true,

@@ -17,6 +17,7 @@
     "express": "^5.2.1",
     "express-rate-limit": "^8.5.2",
     "helmet": "^8.2.0",
+    "kafkajs": "^2.2.4",
     "mongoose": "^9.7.3",
     "morgan": "^1.11.0",
     "winston": "^3.19.0",

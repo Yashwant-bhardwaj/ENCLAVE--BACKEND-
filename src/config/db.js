@@ -10,7 +10,7 @@ const connectDB = async () => {
     );
   } catch (error) {
     logger.error(`MongoDB Connection Failed : ${error.message}`);
-    process.exit(1);
+    logger.warn("Running in Offline DB Mode (In-Memory fallback will be used)");
   }
 };
 
